@@ -4,40 +4,75 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import google.generativeai as genai
+import os # <--- 新增：用來處理檔案讀寫
 
 # --- 設定頁面配置 ---
-st.set_page_config(page_title="AI 戰情雷達 (2026 Live)", layout="wide")
+st.set_page_config(page_title="AI 戰情雷達 (記憶版)", layout="wide")
 
-st.title("🚀 AI 戰情雷達 - 2026 智能版")
-st.markdown("自動鎖定 Google 最新的 Gemini 模型 (2.0/3.0)，即時掃描台股戰情。")
+st.title("🚀 AI 戰情雷達 - 2026 智能記憶版")
+st.markdown("自動記憶您的觀察清單，並鎖定 Google 最新 Gemini 模型進行分析。")
+
+# --- 核心設定：檔案存取 (新增功能) ---
+WATCHLIST_FILE = 'watchlist.txt' # 儲存清單的檔案名稱
+
+def load_watchlist():
+    """從檔案讀取清單，如果檔案不存在則回傳預設值"""
+    default_tickers = "2330, 2317, 3034, 2376, 2383, 2027, 0050"
+    if os.path.exists(WATCHLIST_FILE):
+        try:
+            with open(WATCHLIST_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content: # 確保不是空檔案
+                    return content
+        except:
+            pass # 讀取失敗就用預設值
+    return default_tickers
+
+def save_watchlist(tickers):
+    """將清單存入檔案"""
+    try:
+        with open(WATCHLIST_FILE, 'w', encoding='utf-8') as f:
+            f.write(tickers)
+    except Exception as e:
+        st.error(f"存檔失敗: {e}")
 
 # --- 側邊欄：設定 ---
 st.sidebar.header("⚙️ 核心設定")
 
-# 1. 模型選擇 (升級：加入自動更新別名)
+# 1. 模型選擇
 st.sidebar.subheader("🧠 AI 模型引擎")
-
-# 2026 年的主流模型清單
 model_map = {
-    "🚀 自動最新極速版 (gemini-flash-latest)": "gemini-flash-latest", # 永遠指向最新的 Flash (如 2.0 Flash)
-    "🧠 自動最新深度版 (gemini-pro-latest)": "gemini-pro-latest",     # 永遠指向最新的 Pro (如 2.0 Pro)
-    "⚡ Gemini 2.0 Flash (指定版本)": "gemini-2.0-flash",            # 鎖定特定版本
-    "💎 Gemini 2.0 Pro (指定版本)": "gemini-2.0-pro",                # 鎖定特定版本
-    "🧪 實驗性模型 (Experimental)": "gemini-2.0-flash-exp"           # 嚐鮮版
+    "🚀 自動最新極速版 (gemini-flash-latest)": "gemini-flash-latest",
+    "🧠 自動最新深度版 (gemini-pro-latest)": "gemini-pro-latest",
+    "⚡ Gemini 2.0 Flash (指定版本)": "gemini-2.0-flash",
+    "💎 Gemini 2.0 Pro (指定版本)": "gemini-2.0-pro",
+    "🧪 實驗性模型 (Experimental)": "gemini-2.0-flash-exp"
 }
-
 selected_label = st.sidebar.selectbox(
     "選擇分析大腦",
     list(model_map.keys()),
-    index=0, # 預設選第一個「自動最新版」，這樣您永遠不用改扣
+    index=0,
     help="選擇 'latest' 系列，Google 會自動幫您升級到當下最強模型。"
 )
 model_name = model_map[selected_label]
 
-# 2. 觀察清單
-st.sidebar.subheader("📋 觀察清單")
-default_tickers = "2330, 2317, 3034, 2376, 2383, 2027, 0050"
-user_input = st.sidebar.text_area("輸入股票代號 (用逗號隔開)", default_tickers)
+# 2. 觀察清單 (升級：自動讀取與儲存)
+st.sidebar.subheader("📋 觀察清單 (自動儲存)")
+
+# 步驟 A: 先讀取舊紀錄
+saved_tickers = load_watchlist()
+
+# 步驟 B: 顯示在輸入框 (預設值設為讀取到的內容)
+user_input = st.sidebar.text_area(
+    "輸入股票代號 (用逗號隔開)", 
+    value=saved_tickers,
+    height=150
+)
+
+# 步驟 C: 檢查是否變更，若變更則立即存檔
+if user_input != saved_tickers:
+    save_watchlist(user_input)
+    # 不需顯示成功訊息，以免干擾畫面，默默存檔即可
 
 # --- 核心功能：網路爬蟲抓中文名 ---
 @st.cache_data(ttl=86400)
@@ -57,20 +92,13 @@ def get_stock_name_from_web(code):
 
 # --- 核心功能：Gemini AI 分析 ---
 def get_gemini_analysis(df, model_id):
-    """
-    使用 Google Gemini API 分析 (支援 latest 別名)
-    """
-    # 1. 設定 API Key
     if "GEMINI_API_KEY" in st.secrets:
-        # 配合您的截圖，這裡使用 GEMINI_API_KEY 這個變數名稱
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     elif "GOOGLE_API_KEY" in st.secrets:
-        # 相容舊設定
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     else:
         return "❌ 錯誤：找不到 API Key，請檢查 secrets.toml"
 
-    # 2. 準備數據與 Prompt
     data_text = df.to_string(index=False)
     
     prompt = f"""
@@ -87,9 +115,7 @@ def get_gemini_analysis(df, model_id):
     4. 使用繁體中文，語氣專業、簡潔，善用 Emoji。
     """
     
-    # 3. 呼叫模型
     try:
-        # 這裡會直接使用使用者選到的 (例如 gemini-flash-latest)
         model = genai.GenerativeModel(model_id)
         response = model.generate_content(prompt)
         return response.text
@@ -106,7 +132,9 @@ def calculate_rsi(series, period=14):
 
 def get_stock_data(tickers):
     data_list = []
-    ticker_list = [t.strip() for t in tickers.split(',')]
+    # 處理全形逗號與空格
+    clean_tickers = tickers.replace("，", ",").split(',')
+    ticker_list = [t.strip() for t in clean_tickers if t.strip()]
     
     progress_text = "連線 Yahoo 股市資料庫..."
     my_bar = st.progress(0, text=progress_text)
@@ -167,7 +195,16 @@ if user_input:
             elif '警戒' in val: return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
             return ''
         
-        st.dataframe(result_df.style.map(highlight_signal, subset=['訊號']), use_container_width=True, height=400)
+        def color_change(val):
+            return 'color: red;' if '-' in val else 'color: green;'
+
+        st.dataframe(
+            result_df.style
+            .map(highlight_signal, subset=['訊號'])
+            .map(color_change, subset=['漲跌%']), 
+            use_container_width=True, 
+            height=400
+        )
         
         # --- Gemini AI 分析區塊 ---
         st.divider()
