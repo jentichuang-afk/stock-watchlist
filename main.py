@@ -46,6 +46,11 @@ selected_label = st.sidebar.selectbox("選擇分析大腦", list(model_map.keys(
 model_name = model_map[selected_label]
 
 # 2. 觀察清單
+
+# --- 新增這兩行：顯示檔案路徑 ---
+current_path = os.path.abspath(WATCHLIST_FILE)
+st.sidebar.caption(f"📁 清單檔案位置：\n{current_path}")
+# -----------------------------
 st.sidebar.subheader("📋 觀察清單")
 saved_tickers = load_watchlist()
 user_input = st.sidebar.text_area("輸入代號", value=saved_tickers, height=150)
@@ -230,3 +235,4 @@ if user_input:
         st.warning("查無數據。")
 else:
     st.info("請輸入代號。")
+
