@@ -1,8 +1,7 @@
 streamlit
 yfinance
 pandas
-numpy
-openai
-requests        
-beautifulsoup4  
+requests
+beautifulsoup4
+google-generativeai 
 
